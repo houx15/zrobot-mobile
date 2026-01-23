@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "learning-lamp-mobile",
+    "slug": "learning-lamp-mobile",
+    "version": "1.0.0",
+    "orientation": "landscape",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.anonymous.learninglampmobile"
+    },
+    "android": {
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ],
+      "package": "com.anonymous.learninglampmobile"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Z.Robot to access your camera to scan homework."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow Z.Robot to access your microphone for AI voice interaction."
+        }
+      ]
+    ]
+  }
+}

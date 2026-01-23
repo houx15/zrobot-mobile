@@ -1,0 +1,88 @@
+# Dependencies
+node_modules/
+
+# Native directories (regenerate with `npx expo prebuild`)
+android/
+ios/
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Native builds
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# Debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# Local env files
+.env
+.env.*
+!.env.example
+
+# TypeScript
+*.tsbuildinfo
+
+# Testing
+coverage/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Android
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+android/*.iml
+android/.idea/
+*.apk
+*.aab
+
+# iOS
+ios/Pods/
+ios/build/
+ios/*.xcworkspace
+ios/*.xcodeproj/xcuserdata/
+ios/*.xcodeproj/project.xcworkspace/
+*.ipa
+
+# Temporary files
+*.log
+*.tmp
+*.temp
+
+# Bundle files (generated)
+*.bundle
+
+# Watchman
+.watchmanconfig
+
+# Expo EAS
+.easignore
+
+# Secrets (never commit these)
+google-services.json
+GoogleService-Info.plist
+credentials.json
+secrets.json
+*.keystore
