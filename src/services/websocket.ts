@@ -37,6 +37,10 @@ export interface ServerMessage {
     audio?: string;      // base64 encoded audio from TTS
     text?: string;       // transcript text
     is_final?: boolean;  // true for final ASR result
+    format?: string;
+    sample_rate?: number;
+    channels?: number;
+    bits_per_sample?: number;
     total_segments?: number;
     code?: number;       // error code
     message?: string;    // error message
@@ -51,10 +55,19 @@ export interface ServerMessage {
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
 
+export interface AudioMeta {
+  segmentId?: number;
+  format?: string;
+  sampleRate?: number;
+  channels?: number;
+  bitsPerSample?: number;
+  isFinal?: boolean;
+}
+
 export interface WebSocketCallbacks {
   onConnectionChange?: (state: ConnectionState) => void;
   onTranscript?: (text: string, isFinal: boolean) => void;
-  onAudio?: (audioBase64: string, segmentId?: number) => void;
+  onAudio?: (audioBase64: string, meta?: AudioMeta) => void;
   onSegment?: (segment: Segment) => void;
   onStateChange?: (state: ConversationStateType) => void;
   onDone?: (totalSegments: number) => void;
@@ -249,7 +262,14 @@ export class ConversationWebSocket {
 
         case 'audio':
           // TTS audio data
-          this.callbacks.onAudio?.(message.data.audio || '', message.data.segment_id);
+          this.callbacks.onAudio?.(message.data.audio || '', {
+            segmentId: message.data.segment_id,
+            format: message.data.format,
+            sampleRate: message.data.sample_rate,
+            channels: message.data.channels,
+            bitsPerSample: message.data.bits_per_sample,
+            isFinal: message.data.is_final,
+          });
           break;
 
         case 'done':

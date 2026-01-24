@@ -22,7 +22,9 @@ import {
   Block,
   InlineElement,
   ParsedBoard,
+  normalizeLatexText,
 } from '../utils/boardMarkup';
+import { MathRichTextBlock, hasMathDelimiters } from './MathRichTextBlock';
 
 // ============ 内联元素组件 ============
 
@@ -231,25 +233,25 @@ const InlineRenderer = ({ text, style }: InlineRendererProps) => {
 function renderInlineElement(element: InlineElement, key: number): React.ReactNode {
   switch (element.type) {
     case 'text':
-      return <Text key={key}>{element.content}</Text>;
+      return <Text key={key}>{normalizeLatexText(element.content)}</Text>;
     case 'highlight_yellow':
       return (
         <Highlight key={key} color="yellow">
-          {element.content}
+          {normalizeLatexText(element.content)}
         </Highlight>
       );
     case 'highlight_red':
       return (
         <Highlight key={key} color="red">
-          {element.content}
+          {normalizeLatexText(element.content)}
         </Highlight>
       );
     case 'bold_red':
-      return <KeyPoint key={key}>{element.content}</KeyPoint>;
+      return <KeyPoint key={key}>{normalizeLatexText(element.content)}</KeyPoint>;
     case 'underline':
-      return <Underline key={key}>{element.content}</Underline>;
+      return <Underline key={key}>{normalizeLatexText(element.content)}</Underline>;
     case 'formula':
-      return <Formula key={key}>{element.content}</Formula>;
+      return <Formula key={key}>{normalizeLatexText(element.content)}</Formula>;
     case 'html':
       // 简单处理：直接显示文本，可以后续集成 WebView 或 react-native-render-html
       return <Text key={key}>{element.content}</Text>;
@@ -282,17 +284,46 @@ const BlockRenderer = ({ block }: BlockRendererProps) => {
     case 'note':
       return (
         <NoteBox color={block.color}>
-          <InlineRenderer text={block.content} style={{ color: NOTE_STYLES[block.color].text, fontSize: 14 }} />
+          {hasMathDelimiters(block.content) ? (
+            <MathRichTextBlock
+              text={block.content}
+              textColor={NOTE_STYLES[block.color].text}
+              fontSize={14}
+              lineHeight={22}
+            />
+          ) : (
+            <InlineRenderer
+              text={block.content}
+              style={{ color: NOTE_STYLES[block.color].text, fontSize: 14 }}
+            />
+          )}
         </NoteBox>
       );
 
     case 'answer':
-      return <AnswerBox>{block.content}</AnswerBox>;
+      return (
+        <AnswerBox>
+          {hasMathDelimiters(block.content) ? (
+            <MathRichTextBlock
+              text={block.content}
+              textColor="#DC2626"
+              fontSize={20}
+              lineHeight={28}
+            />
+          ) : (
+            block.content
+          )}
+        </AnswerBox>
+      );
 
     case 'paragraph':
       return (
         <View style={{ marginVertical: 4 }}>
-          <InlineRenderer text={block.content} />
+          {hasMathDelimiters(block.content) ? (
+            <MathRichTextBlock text={block.content} />
+          ) : (
+            <InlineRenderer text={block.content} />
+          )}
         </View>
       );
 

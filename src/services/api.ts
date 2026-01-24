@@ -186,7 +186,13 @@ export const uploadService = {
 
 export const homeworkService = {
   submitCorrection: async (imageUrl: string) => {
+    // TODO
+    imageUrl = "http://wh111-store.oss-cn-shenzhen.aliyuncs.com/d/file/2022-10-21/e93cdc68a020a2e81fa5fc49cfaf7a3f/1.jpg?OSSAccessKeyId=LTAI4FhsUTKEPijGh5eWZdMd&Expires=5339337115&Signature=SmO%2Bb5iXTbrqhXbtpGCIA1DFCws%3D"
     const response = await api.post('/correction/submit', { image_url: imageUrl });
+    return response.data;
+  },
+  getCorrectionDetail: async (correctionId: number) => {
+    const response = await api.get('/correction/detail', { params: { correction_id: correctionId } });
     return response.data;
   },
   getHistory: async (page = 1) => {
@@ -197,6 +203,8 @@ export const homeworkService = {
 
 export const questionService = {
   submitSolving: async (imageUrl: string) => {
+    // TODO
+    imageUrl = "http://www.haotiw.com/media/Question/2020/11/700002.png"
     const response = await api.post('/solving/submit', { image_url: imageUrl });
     return response.data;
   },

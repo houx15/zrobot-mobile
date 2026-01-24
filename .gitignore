@@ -1,8 +1,26 @@
 # Dependencies
 node_modules/
 
+# Keep essential Android sources/configs
+!android/app/
+!android/app/src/
+!android/app/src/main/
+!android/app/src/main/java/
+!android/app/src/main/java/**/*
+android/app/src/main/res/
+android/app/src/main/res/*
+!android/app/src/main/AndroidManifest.xml
+android/app/build.gradle
+android/build.gradle
+android/settings.gradle
+android/gradle.properties
+android/gradle/
+android/gradle/wrapper/
+android/gradle/wrapper/**/*
+android/gradlew
+android/gradlew.bat
+
 # Native directories (regenerate with `npx expo prebuild`)
-android/
 ios/
 
 # Expo

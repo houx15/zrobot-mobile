@@ -4,7 +4,7 @@
  */
 
 import React, { useRef, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, ActivityIndicator, Dimensions } from 'react-native';
 import { Camera, PhotoFile } from 'react-native-vision-camera';
 import { Camera as CameraIcon, RotateCcw } from 'lucide-react-native';
 import { useCamera } from '../contexts/CameraContext';
@@ -26,6 +26,11 @@ const CameraView: React.FC<CameraViewProps> = ({ onCapture, overlayText, buttonT
     requestPermission,
     isLoading,
   } = useCamera();
+  const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+  const frameWidth = screenWidth * 0.7;
+  const frameHeight = screenHeight * 0.6;
+  const frameLeft = (screenWidth - frameWidth) / 2;
+  const frameTop = (screenHeight - frameHeight) / 2;
 
   // Switch to next camera in the list
   const toggleCamera = useCallback(() => {
@@ -111,7 +116,10 @@ const CameraView: React.FC<CameraViewProps> = ({ onCapture, overlayText, buttonT
         </View>
 
         {/* Viewfinder Frame */}
-        <View className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[70%] h-[60%] border-2 border-white/50 rounded-3xl items-center justify-center">
+        <View
+          className="absolute border-2 border-white/50 rounded-3xl items-center justify-center"
+          style={{ width: frameWidth, height: frameHeight, left: frameLeft, top: frameTop }}
+        >
           <View className="w-full h-[1px] bg-white/20 absolute top-1/2" />
           <View className="h-full w-[1px] bg-white/20 absolute left-1/2" />
         </View>

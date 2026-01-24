@@ -17,6 +17,7 @@ export interface ConversationState {
   aiText: string;           // AI's current text (for display/whiteboard)
   aiFullText: string;       // Accumulated AI text
   userText: string;         // User's transcript
+  userFullText: string;     // Accumulated user transcript
   error: string | null;
   isRecording: boolean;
   isPlaying: boolean;
@@ -52,6 +53,7 @@ export function useConversation(options: UseConversationOptions) {
     aiText: '',
     aiFullText: '',
     userText: '',
+    userFullText: '',
     error: null,
     isRecording: false,
     isPlaying: false,
@@ -65,6 +67,10 @@ export function useConversation(options: UseConversationOptions) {
   const wsRef = useRef<ConversationWebSocket | null>(null);
   const audioRef = useRef<AudioService | null>(null);
   const sequenceRef = useRef<number>(1);
+  const isPlayingRef = useRef<boolean>(false);
+  const sentFramesRef = useRef<number>(0);
+  const asrGateRef = useRef<boolean>(true);
+  const connectionStateRef = useRef<ConnectionState>('disconnected');
 
   // Flag to track if AI is currently speaking (for interrupt logic)
   const aiSpeakingRef = useRef<boolean>(false);
@@ -82,15 +88,26 @@ export function useConversation(options: UseConversationOptions) {
           setState(prev => ({ ...prev, isRecording: recordingState === 'recording' }));
         },
         onPlaybackStateChange: (playbackState: PlaybackState) => {
+          isPlayingRef.current = playbackState === 'playing';
           setState(prev => ({ ...prev, isPlaying: playbackState === 'playing' }));
+          if (playbackState === 'playing') {
+            asrGateRef.current = false;
+          } else if (playbackState === 'idle' && !aiSpeakingRef.current) {
+            asrGateRef.current = true;
+          }
         },
         onAudioData: (base64Data: string) => {
-          if (wsRef.current?.isConnected()) {
+          if (asrGateRef.current && wsRef.current?.isConnected()) {
             wsRef.current.sendAudio(base64Data, sequenceRef.current++);
+            sentFramesRef.current += 1;
+            if (sentFramesRef.current === 1 || sentFramesRef.current % 50 === 0) {
+              console.log(`[Hook] sent audio frame=${sentFramesRef.current} bytes=${base64Data.length}`);
+            }
           }
         },
         onSpeechStart: () => {
           console.log('[Hook] User started speaking');
+          asrGateRef.current = true;
           // If AI is speaking, send interrupt
           if (aiSpeakingRef.current && wsRef.current?.isConnected()) {
             console.log('[Hook] Interrupting AI...');
@@ -102,6 +119,7 @@ export function useConversation(options: UseConversationOptions) {
         },
         onSilenceDetected: async () => {
           console.log('[Hook] User stopped speaking (silence detected)');
+          asrGateRef.current = false;
           await audioRef.current?.stopRecording();
           wsRef.current?.sendEndSpeaking();
           setState(prev => ({ ...prev, status: 'processing', isRecording: false }));
@@ -123,11 +141,11 @@ export function useConversation(options: UseConversationOptions) {
           setState(prev => ({ ...prev, connectionState: connState }));
           onConnectionChange?.(connState);
 
-          if (connState === 'connected') {
-            setState(prev => ({ ...prev, status: 'listening' }));
-            if (initialImageUrl) {
-              wsRef.current?.sendImage(initialImageUrl);
-            }
+      if (connState === 'connected') {
+        setState(prev => ({ ...prev, status: 'listening' }));
+        if (initialImageUrl) {
+          wsRef.current?.sendImage(initialImageUrl);
+        }
           } else if (connState === 'error' || connState === 'disconnected') {
             setState(prev => ({ ...prev, status: 'error' }));
           }
@@ -143,7 +161,14 @@ export function useConversation(options: UseConversationOptions) {
           const newStatus = statusMap[serverState] || 'idle';
           setState(prev => {
             if (serverState === 'processing') {
-              return { ...prev, status: newStatus, aiText: '', segments: [], boardMarkup: '' };
+              return {
+                ...prev,
+                status: newStatus,
+                aiText: '',
+                aiFullText: '',
+                segments: [],
+                boardMarkup: '',
+              };
             }
             return { ...prev, status: newStatus };
           });
@@ -152,15 +177,22 @@ export function useConversation(options: UseConversationOptions) {
           }
           if (serverState === 'idle') {
             aiSpeakingRef.current = false;
+            if (autoConnect && !audioRef.current?.isRecording()) {
+              startListening();
+            }
           }
           onStateChange?.(serverState);
         },
         onTranscript: (text: string, isFinal: boolean) => {
-          setState(prev => ({
-            ...prev,
-            userText: text,
-            status: isFinal ? 'processing' : 'listening'
-          }));
+          setState(prev => {
+            const trimmed = text || '';
+            return {
+              ...prev,
+              userText: trimmed,
+              userFullText: isFinal ? trimmed : prev.userFullText,
+              status: isFinal ? 'processing' : 'listening',
+            };
+          });
         },
         onSegment: (segment: Segment) => {
           console.log('[Hook] Received segment:', segment.segment_id);
@@ -173,21 +205,27 @@ export function useConversation(options: UseConversationOptions) {
               segments: newSegments,
               boardMarkup: newBoardMarkup,
               aiText: segment.speech, // Current speech for display
-              aiFullText: prev.aiFullText + segment.speech + ' ',
+              aiFullText: segment.speech,
             };
           });
           onSegment?.(segment);
         },
-        onAudio: (audioBase64: string, segmentId?: number) => {
-          // Queue audio for playback
-          audioRef.current?.queueAudio(audioBase64);
-          if (segmentId !== undefined) {
-            setState(prev => ({ ...prev, currentSegmentId: segmentId }));
+        onAudio: (audioBase64: string, meta) => {
+          // Queue audio for playback (PCM streaming)
+          audioRef.current?.queueAudio(audioBase64, {
+            format: meta?.format,
+            sampleRate: meta?.sampleRate,
+            channels: meta?.channels,
+            bitsPerSample: meta?.bitsPerSample,
+          });
+          if (meta?.segmentId !== undefined) {
+            setState(prev => ({ ...prev, currentSegmentId: meta.segmentId }));
           }
         },
         onDone: () => {
           console.log('[Hook] AI finished speaking');
           aiSpeakingRef.current = false;
+          asrGateRef.current = true;
           // Auto-start listening again after AI finishes
           setState(prev => ({ ...prev, status: 'listening' }));
           startListening();
@@ -250,10 +288,14 @@ export function useConversation(options: UseConversationOptions) {
       return;
     }
 
+    if (audioRef.current.isRecording()) {
+      return;
+    }
+
     const success = await audioRef.current.startRecording();
     if (success) {
       sequenceRef.current = 1;
-      setState(prev => ({ ...prev, status: 'listening', userText: '...' }));
+      setState(prev => ({ ...prev, status: 'listening' }));
     }
   }, []);
 
@@ -289,8 +331,12 @@ export function useConversation(options: UseConversationOptions) {
   /**
    * Cleanup and disconnect
    */
-  const disconnect = useCallback(async () => {
-    console.log('[Hook] Disconnecting...');
+  const disconnect = useCallback(async (reason: string = 'unknown') => {
+    if (reason === 'unknown' && connectionStateRef.current === 'connected') {
+      console.warn('[Hook] Ignoring disconnect without reason while connected');
+      return;
+    }
+    console.log('[Hook] Disconnecting...', reason);
 
     if (audioRef.current) {
       await audioRef.current.cleanup();
@@ -333,9 +379,13 @@ export function useConversation(options: UseConversationOptions) {
     }
 
     return () => {
-      disconnect();
+      disconnect('effect_cleanup');
     };
   }, [autoConnect, conversationId, wsToken, initialize, disconnect]);
+
+  useEffect(() => {
+    connectionStateRef.current = state.connectionState;
+  }, [state.connectionState]);
 
   return {
     state,

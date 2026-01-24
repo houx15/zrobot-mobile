@@ -33,6 +33,7 @@
     "react-native-gesture-handler": "~2.20.2",
     "react-native-svg": "15.8.0",
     "react-native-audio-record": "^0.2.1",
+    "react-native-webview": "^13.12.3",
     "lucide-react-native": "^0.473.0",
     "clsx": "^2.1.1",
     "tailwind-merge": "^2.5.4",

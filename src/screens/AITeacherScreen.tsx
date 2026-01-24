@@ -93,6 +93,7 @@ interface ContentProps {
 }
 
 const AITeacherContent = ({ conversationId, wsToken, onEnd }: ContentProps) => {
+  const navigation = useNavigation<any>();
   const {
     state,
     boardMarkup,
@@ -101,12 +102,12 @@ const AITeacherContent = ({ conversationId, wsToken, onEnd }: ContentProps) => {
     conversationId,
     wsToken,
     autoConnect: true,
-    onError: (error) => {
+    onError: useCallback((error: string) => {
       console.error('[AITeacher] Conversation error:', error);
-    },
+    }, []),
   });
 
-  const { status, aiText, userText, closeReason } = state;
+  const { status, aiText, aiFullText, userText, userFullText, closeReason } = state;
 
   return (
     <Layout className="bg-[#F5F7FA]">
@@ -116,12 +117,23 @@ const AITeacherContent = ({ conversationId, wsToken, onEnd }: ContentProps) => {
             {closeReason && (
                 <View className="absolute top-0 left-0 right-0 z-30 bg-amber-500 px-6 py-4">
                     <Text className="text-white text-center font-medium">{closeReason}</Text>
-                    <TouchableOpacity
-                        onPress={onEnd}
-                        className="mt-2 bg-white/20 px-4 py-2 rounded-full self-center"
-                    >
-                        <Text className="text-white font-bold">返回首页</Text>
-                    </TouchableOpacity>
+                    <View className="mt-2 flex-row justify-center space-x-3">
+                        <TouchableOpacity
+                            onPress={onEnd}
+                            className="bg-white/20 px-4 py-2 rounded-full"
+                        >
+                            <Text className="text-white font-bold">返回首页</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            onPress={async () => {
+                              await disconnect('banner_restart');
+                              navigation.replace('AITeacher');
+                            }}
+                            className="bg-white/20 px-4 py-2 rounded-full"
+                        >
+                            <Text className="text-white font-bold">重新开启对话</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
             )}
 
@@ -129,7 +141,7 @@ const AITeacherContent = ({ conversationId, wsToken, onEnd }: ContentProps) => {
             <View className="absolute top-6 right-6 z-20">
                 <TouchableOpacity
                     onPress={async () => {
-                      await disconnect();
+                      await disconnect('user_end');
                       onEnd();
                     }}
                     className="flex-row items-center space-x-2 bg-red-100 px-6 py-3 rounded-full border border-red-200"
@@ -156,7 +168,7 @@ const AITeacherContent = ({ conversationId, wsToken, onEnd }: ContentProps) => {
                         {status === 'speaking' && <Volume2 size={16} color="#60A5FA" />}
                     </View>
                     <Text className="text-xl text-gray-800 font-medium leading-relaxed">
-                        {aiText || '你好同学！我是小智老师，有什么想问的吗？'}
+                        {aiFullText || aiText || (status === 'processing' ? '（思考中）' : '你好同学！我是小智老师，有什么想问的吗？')}
                     </Text>
                 </View>
             </View>
@@ -198,7 +210,7 @@ const AITeacherContent = ({ conversationId, wsToken, onEnd }: ContentProps) => {
             <View className="flex-row justify-end items-end space-x-4 px-4 pb-2">
                  <View className="bg-blue-600 p-5 rounded-3xl rounded-tr-none shadow-lg shadow-blue-100 flex-1">
                      <Text className="text-white text-xl font-medium text-right">
-                        {userText || '(点击麦克风开始说话)'}
+                        {userFullText || userText || '你可以随时提问哦'}
                      </Text>
                  </View>
                  <View>

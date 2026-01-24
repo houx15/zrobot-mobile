@@ -3,6 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator } from 'rea
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { FileQuestion, CheckCircle, XCircle, Lightbulb } from 'lucide-react-native';
 import Layout from '../components/Layout';
+import { BoardRenderer } from '../components/BoardRenderer';
 import { questionService } from '../services/api';
 
 const HomeworkDetailScreen = () => {
@@ -49,9 +50,7 @@ const HomeworkDetailScreen = () => {
                         <Text className="font-bold text-gray-500">题目内容</Text>
                     </View>
                     <View className="bg-gray-50 p-6 rounded-2xl">
-                         <Text className="text-xl font-medium text-gray-800 leading-relaxed">
-                             {detail.question_text}
-                         </Text>
+                         <BoardRenderer markup={detail.question_text || ''} title="【题目】" />
                     </View>
                 </View>
 

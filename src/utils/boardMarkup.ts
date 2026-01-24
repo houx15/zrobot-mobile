@@ -277,6 +277,76 @@ export function parseInlineMarkup(text: string): InlineElement[] {
   return elements;
 }
 
+// ============ LaTeX-ish Normalizer ============
+
+const SUPERSCRIPTS: Record<string, string> = {
+  '0': '⁰',
+  '1': '¹',
+  '2': '²',
+  '3': '³',
+  '4': '⁴',
+  '5': '⁵',
+  '6': '⁶',
+  '7': '⁷',
+  '8': '⁸',
+  '9': '⁹',
+  '+': '⁺',
+  '-': '⁻',
+  '=': '⁼',
+  'n': 'ⁿ',
+  'i': 'ⁱ',
+};
+
+const SUBSCRIPTS: Record<string, string> = {
+  '0': '₀',
+  '1': '₁',
+  '2': '₂',
+  '3': '₃',
+  '4': '₄',
+  '5': '₅',
+  '6': '₆',
+  '7': '₇',
+  '8': '₈',
+  '9': '₉',
+  '+': '₊',
+  '-': '₋',
+  '=': '₌',
+};
+
+function toSuperscript(text: string): string {
+  return text
+    .split('')
+    .map((c) => SUPERSCRIPTS[c] || c)
+    .join('');
+}
+
+function toSubscript(text: string): string {
+  return text
+    .split('')
+    .map((c) => SUBSCRIPTS[c] || c)
+    .join('');
+}
+
+export function normalizeLatexText(text: string): string {
+  if (!text) return text;
+  let out = text;
+  out = out.replace(/\\circ/g, '°');
+  out = out.replace(/\\times/g, '×');
+  out = out.replace(/\\cdot/g, '·');
+  out = out.replace(/\\leq/g, '≤');
+  out = out.replace(/\\geq/g, '≥');
+  out = out.replace(/\\neq/g, '≠');
+  out = out.replace(/\\pm/g, '±');
+  out = out.replace(/\\approx/g, '≈');
+  out = out.replace(/\\sqrt\{([^}]+)\}/g, '√($1)');
+  out = out.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '$1/$2');
+  out = out.replace(/\^\{([^}]+)\}/g, (_, exp) => toSuperscript(exp));
+  out = out.replace(/\^([0-9+\-=ni])/g, (_, exp) => toSuperscript(exp));
+  out = out.replace(/_\{([^}]+)\}/g, (_, sub) => toSubscript(sub));
+  out = out.replace(/_([0-9+\-=])/g, (_, sub) => toSubscript(sub));
+  return out;
+}
+
 // ============ 示例 ============
 
 export const EXAMPLE_MARKUP = `

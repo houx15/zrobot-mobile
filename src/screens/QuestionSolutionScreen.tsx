@@ -1,10 +1,11 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Bot, User, Mic, CheckCircle, Volume2 } from 'lucide-react-native';
 import Layout from '../components/Layout';
 import { BoardRenderer } from '../components/BoardRenderer';
-import { conversationService } from '../services/api';
+import { MathRichTextBlock, hasMathDelimiters } from '../components/MathRichTextBlock';
+import { conversationService, questionService } from '../services/api';
 import { useConversation } from '../hooks/useConversation';
 
 const QuestionSolutionScreen = () => {
@@ -13,36 +14,92 @@ const QuestionSolutionScreen = () => {
   const { imageUrl, questionData, questionHistoryId } = route.params || {};
 
   // Conversation setup state
-  const [conversationId, setConversationId] = useState<number | null>(null);
-  const [wsToken, setWsToken] = useState<string | null>(null);
+  const [wsInfo, setWsInfo] = useState<{ conversationId: number; wsToken: string } | null>(null);
   const [isCreating, setIsCreating] = useState(true);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [resolvedQuestionHistoryId, setResolvedQuestionHistoryId] = useState<number | null>(
+    questionHistoryId || questionData?.id || null
+  );
+  const [resolvedImageUrl, setResolvedImageUrl] = useState<string | undefined>(imageUrl || questionData?.question_image_url);
+  const [resolvedQuestionText, setResolvedQuestionText] = useState<string | undefined>(questionData?.question_text);
+  const creatingRef = useRef(false);
+  const createSeqRef = useRef(0);
 
   // Create conversation on mount
   useEffect(() => {
     const createConversation = async () => {
+      let seq = 0;
       try {
+        if (creatingRef.current) {
+          return;
+        }
+        creatingRef.current = true;
+        createSeqRef.current += 1;
+        seq = createSeqRef.current;
         setIsCreating(true);
         setCreateError(null);
 
-        const response = await conversationService.create('solving', questionHistoryId);
+        let finalQuestionHistoryId = resolvedQuestionHistoryId || questionHistoryId || questionData?.id || null;
+        let finalImageUrl = resolvedImageUrl || imageUrl;
+        let finalQuestionText = resolvedQuestionText || questionData?.question_text;
+
+        // If we came from "题目答疑" (camera flow), submit solving first to get question text + history id.
+        if (!finalQuestionHistoryId && imageUrl) {
+          const solvingRes = await questionService.submitSolving(imageUrl);
+          if (solvingRes.code === 0) {
+            finalQuestionHistoryId = solvingRes.data.question_history_id;
+            finalImageUrl = solvingRes.data.image_url || imageUrl;
+            finalQuestionText = solvingRes.data.question_text;
+            setResolvedQuestionHistoryId(finalQuestionHistoryId);
+            setResolvedImageUrl(finalImageUrl);
+            setResolvedQuestionText(finalQuestionText);
+          } else {
+            if (seq === createSeqRef.current) {
+              setCreateError(solvingRes.message || '解题提交失败');
+            }
+            return;
+          }
+        }
+
+        if (!finalQuestionHistoryId) {
+          if (seq === createSeqRef.current) {
+            setCreateError('缺少题目记录，请重新进入');
+          }
+          return;
+        }
+
+        const response = await conversationService.create('solving', finalQuestionHistoryId);
 
         if (response.code === 0) {
-          setConversationId(response.data.conversation_id);
-          setWsToken(response.data.token);
+          if (seq === createSeqRef.current) {
+            setWsInfo({
+              conversationId: response.data.conversation_id,
+              wsToken: response.data.token,
+            });
+          }
         } else {
-          setCreateError(response.message || 'Failed to create conversation');
+          if (seq === createSeqRef.current) {
+            setCreateError(response.message || 'Failed to create conversation');
+          }
         }
       } catch (e: any) {
         console.error('[QuestionSolution] Create conversation error:', e);
-        setCreateError(e.message || 'Failed to create conversation');
+        if (seq === createSeqRef.current) {
+          setCreateError(e.message || 'Failed to create conversation');
+        }
       } finally {
-        setIsCreating(false);
+        if (seq === createSeqRef.current) {
+          setIsCreating(false);
+          creatingRef.current = false;
+        }
       }
     };
 
+    if (wsInfo?.conversationId && wsInfo.wsToken) {
+      return;
+    }
     createConversation();
-  }, [questionHistoryId]);
+  }, [questionHistoryId, resolvedQuestionHistoryId, imageUrl, wsInfo, questionData, resolvedImageUrl, resolvedQuestionText]);
 
   // Render loading state
   if (isCreating) {
@@ -57,7 +114,7 @@ const QuestionSolutionScreen = () => {
   }
 
   // Render error state
-  if (createError || !conversationId || !wsToken) {
+  if (createError || !wsInfo?.conversationId || !wsInfo.wsToken) {
     return (
       <Layout onBack={() => navigation.navigate('Home')} title="题目答疑">
         <View className="flex-1 items-center justify-center p-6">
@@ -76,10 +133,11 @@ const QuestionSolutionScreen = () => {
   // Render main content with conversation
   return (
     <QuestionSolutionContent
-      conversationId={conversationId}
-      wsToken={wsToken}
-      imageUrl={imageUrl}
+      conversationId={wsInfo.conversationId}
+      wsToken={wsInfo.wsToken}
+      imageUrl={resolvedImageUrl}
       questionData={questionData}
+      questionText={resolvedQuestionText}
     />
   );
 };
@@ -90,9 +148,10 @@ interface ContentProps {
   wsToken: string;
   imageUrl?: string;
   questionData?: any;
+  questionText?: string;
 }
 
-const QuestionSolutionContent = ({ conversationId, wsToken, imageUrl, questionData }: ContentProps) => {
+const QuestionSolutionContent = ({ conversationId, wsToken, imageUrl, questionData, questionText }: ContentProps) => {
   const navigation = useNavigation<any>();
 
   // Use conversation hook
@@ -105,17 +164,17 @@ const QuestionSolutionContent = ({ conversationId, wsToken, imageUrl, questionDa
     wsToken,
     autoConnect: true,
     initialImageUrl: imageUrl,
-    onError: (error) => {
+    onError: useCallback((error: string) => {
       console.error('[QuestionSolution] Conversation error:', error);
-    },
+    }, []),
   });
 
-  const { status, aiText, userText, closeReason } = state;
+  const { status, aiText, aiFullText, userText, userFullText, closeReason } = state;
 
   // Handle complete - end conversation and go home
   const handleComplete = useCallback(async () => {
     try {
-      await disconnect();
+      await disconnect('complete');
       await conversationService.end(conversationId);
     } catch (e) {
       console.error('[QuestionSolution] End conversation error:', e);
@@ -126,7 +185,7 @@ const QuestionSolutionContent = ({ conversationId, wsToken, imageUrl, questionDa
   // Handle back
   const handleBack = useCallback(async () => {
     try {
-      await disconnect();
+      await disconnect('back');
       await conversationService.end(conversationId);
     } catch (e) {
       console.error('[QuestionSolution] End conversation error:', e);
@@ -156,35 +215,63 @@ const QuestionSolutionContent = ({ conversationId, wsToken, imageUrl, questionDa
       {closeReason && (
         <View className="bg-amber-500 px-6 py-4">
           <Text className="text-white text-center font-medium">{closeReason}</Text>
-          <TouchableOpacity
-            onPress={handleBack}
-            className="mt-2 bg-white/20 px-4 py-2 rounded-full self-center"
-          >
-            <Text className="text-white font-bold">返回首页</Text>
-          </TouchableOpacity>
+          <View className="mt-2 flex-row justify-center space-x-3">
+            <TouchableOpacity
+              onPress={handleBack}
+              className="bg-white/20 px-4 py-2 rounded-full"
+            >
+              <Text className="text-white font-bold">返回首页</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={async () => {
+                await disconnect('banner_restart');
+                await conversationService.end(conversationId);
+                navigation.replace('QuestionSolution', { imageUrl });
+              }}
+              className="bg-white/20 px-4 py-2 rounded-full"
+            >
+              <Text className="text-white font-bold">重新开启对话</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
       <View className="flex-1 flex-row p-6 space-x-6">
         {/* Left: Source */}
-        <View className="w-5/12 bg-white rounded-3xl shadow-sm border border-gray-100 p-6">
-          <Text className="text-gray-500 font-bold mb-4">原题</Text>
-          {imageUrl && (
-            <View className="mb-6 rounded-xl overflow-hidden border border-gray-100 h-64">
-              <Image
-                source={{ uri: imageUrl }}
-                className="w-full h-full"
-                resizeMode="contain"
-              />
+        <View className="w-5/12 bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+          <ScrollView contentContainerStyle={{ padding: 24 }}>
+            <Text className="text-gray-500 font-bold mb-4">原题</Text>
+            {imageUrl && (
+              <View className="mb-6 rounded-xl overflow-hidden border border-gray-100 h-64">
+                <Image
+                  source={{ uri: imageUrl }}
+                  className="w-full h-full"
+                  resizeMode="contain"
+                />
+              </View>
+            )}
+            <View>
+              <Text className="text-sm text-gray-400 mb-2">题目内容</Text>
+              {questionText || questionData?.question_text ? (
+                hasMathDelimiters(questionText || questionData.question_text) ? (
+                  <MathRichTextBlock
+                    text={questionText || questionData.question_text}
+                    textColor="#1F2937"
+                    fontSize={18}
+                    lineHeight={28}
+                  />
+                ) : (
+                  <Text className="text-xl font-medium text-gray-800 leading-relaxed">
+                    {questionText || questionData.question_text}
+                  </Text>
+                )
+              ) : (
+                <Text className="text-xl font-medium text-gray-800 leading-relaxed">
+                  正在识别图片中的题目内容...
+                </Text>
+              )}
             </View>
-          )}
-          <View>
-            <Text className="text-sm text-gray-400 mb-2">题目内容</Text>
-            <Text className="text-xl font-medium text-gray-800 leading-relaxed">
-              {questionData?.question_text ||
-                '正在识别图片中的题目内容...'}
-            </Text>
-          </View>
+          </ScrollView>
         </View>
 
         {/* Right: Board */}
@@ -201,7 +288,7 @@ const QuestionSolutionContent = ({ conversationId, wsToken, imageUrl, questionDa
             </View>
             <View className="bg-blue-50 p-4 rounded-2xl rounded-tl-none border border-blue-100 flex-1">
               <Text className="font-medium text-lg" style={{ color: statusInfo.color }}>
-                {aiText || statusInfo.text}
+                {aiFullText || aiText || (status === 'processing' ? '（思考中）' : statusInfo.text)}
               </Text>
             </View>
           </View>
@@ -254,7 +341,7 @@ const QuestionSolutionContent = ({ conversationId, wsToken, imageUrl, questionDa
           <View className="p-4 flex-row items-center space-x-4 bg-gray-50/30 border-t border-gray-100 justify-end">
             <View className="bg-gray-100 p-4 rounded-2xl rounded-tr-none border border-gray-200 flex-1 items-end">
               <Text className="font-medium text-gray-700">
-                {userText || '(点击麦克风开始说话)'}
+                {userFullText || userText || '你可以随时提问哦'}
               </Text>
             </View>
             <View className="w-14 h-14 bg-gray-200 rounded-full items-center justify-center border-2 border-white shadow-sm">
