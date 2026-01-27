@@ -66,6 +66,7 @@ export class AudioService {
   private clipWindowStart = 0;
   private audioFrames = 0;
   private lastAudioAt = 0;
+  private vadEnabled: boolean = true;
   private noDataTimer: NodeJS.Timeout | null = null;
   private noDataRetry = 0;
   private readonly noDataTimeoutMs = 1200;
@@ -208,6 +209,9 @@ export class AudioService {
   }
 
   private processVAD(base64Pcm: string) {
+    if (!this.vadEnabled) {
+      return;
+    }
     const buffer = Buffer.from(base64Pcm, 'base64');
     if (buffer.length < 2) {
       return;
@@ -274,6 +278,16 @@ export class AudioService {
     this.speechStartTime = null;
     this.clipFrames = 0;
     this.clipWindowStart = 0;
+  }
+
+  setVadEnabled(enabled: boolean) {
+    if (this.vadEnabled === enabled) {
+      return;
+    }
+    this.vadEnabled = enabled;
+    if (!enabled) {
+      this.stopVAD();
+    }
   }
 
   private scheduleNoDataCheck() {

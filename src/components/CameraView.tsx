@@ -4,7 +4,7 @@
  */
 
 import React, { useRef, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, ActivityIndicator, Dimensions, StyleSheet } from 'react-native';
 import { Camera, PhotoFile } from 'react-native-vision-camera';
 import { Camera as CameraIcon, RotateCcw } from 'lucide-react-native';
 import { useCamera } from '../contexts/CameraContext';
@@ -100,13 +100,9 @@ const CameraView: React.FC<CameraViewProps> = ({ onCapture, overlayText, buttonT
       />
 
       {/* Overlay */}
-      <View className="absolute inset-0 flex-col justify-between p-8">
-        {/* Top Overlay */}
-        <View className="w-full items-center mt-10">
-          <View className="bg-black/40 px-6 py-2 rounded-full">
-            <Text className="text-white text-lg">{overlayText}</Text>
-          </View>
-          {/* Camera name indicator */}
+      <View style={styles.overlay}>
+        {/* Top Overlay (camera name) */}
+        <View style={styles.topCenter}>
           <View className="bg-black/30 px-4 py-1 rounded-full mt-2">
             <Text className="text-white/70 text-sm">
               {selectedDevice.position === 'external' ? 'USB: ' : ''}
@@ -125,38 +121,49 @@ const CameraView: React.FC<CameraViewProps> = ({ onCapture, overlayText, buttonT
         </View>
 
         {/* Bottom Controls */}
-        <View className="w-full flex-row justify-center items-center mb-8 space-x-8">
-          {/* Flip Camera (only show if multiple cameras) */}
-          {devices.length > 1 && (
-            <TouchableOpacity
-              onPress={toggleCamera}
-              className="p-4 bg-white/20 rounded-full"
-            >
-              <RotateCcw color="white" size={24} />
-            </TouchableOpacity>
-          )}
-
-          {/* Capture Button */}
-          <TouchableOpacity
-            onPress={takePicture}
-            disabled={loading}
-            className={`
-              h-[80px] px-12 rounded-full shadow-lg flex-row items-center space-x-4
-              ${loading ? 'bg-gray-500' : 'bg-blue-600'}
-            `}
-          >
-            {loading ? (
-              <ActivityIndicator color="white" />
-            ) : (
-              <>
-                <CameraIcon color="white" size={32} />
-                <Text className="text-white text-2xl font-bold ml-2">{buttonText}</Text>
-              </>
+        <View style={styles.bottom}>
+          <View className="items-center mb-4">
+            <View className="bg-black/40 px-6 py-2 rounded-full">
+              <Text className="text-white text-lg">{overlayText}</Text>
+            </View>
+          </View>
+          <View className="w-full flex-row items-center">
+          <View className="flex-1 items-center">
+            {devices.length > 1 && (
+              <TouchableOpacity
+                onPress={toggleCamera}
+                className="p-4 bg-white/20 rounded-full"
+              >
+                <RotateCcw color="white" size={24} />
+              </TouchableOpacity>
             )}
-          </TouchableOpacity>
+          </View>
 
-          {/* Spacer for symmetry when flip button is shown */}
-          {devices.length > 1 && <View className="w-14" />}
+          <View className="flex-1 items-center">
+            <TouchableOpacity
+              onPress={takePicture}
+              disabled={loading}
+              className={`
+                h-[80px] px-12 rounded-full shadow-lg flex-row items-center space-x-4
+                ${loading ? 'bg-gray-500' : 'bg-blue-600'}
+              `}
+            >
+              {loading ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <>
+                  <CameraIcon color="white" size={32} />
+                  <Text className="text-white text-2xl font-bold ml-2">{buttonText}</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          <View className="flex-1 items-center">
+            {/* Keep column for symmetry */}
+            <View className="w-12 h-12" />
+          </View>
+          </View>
         </View>
       </View>
     </View>
@@ -164,3 +171,24 @@ const CameraView: React.FC<CameraViewProps> = ({ onCapture, overlayText, buttonT
 };
 
 export default CameraView;
+
+const styles = StyleSheet.create({
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  topCenter: {
+    position: 'absolute',
+    top: 24,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  bottom: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 24,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+  },
+});

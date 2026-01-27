@@ -92,12 +92,20 @@ export function useConversation(options: UseConversationOptions) {
           setState(prev => ({ ...prev, isPlaying: playbackState === 'playing' }));
           if (playbackState === 'playing') {
             asrGateRef.current = false;
-          } else if (playbackState === 'idle' && !aiSpeakingRef.current) {
+            audioRef.current?.setVadEnabled(false);
+            if (audioRef.current?.isRecording()) {
+              void audioRef.current.stopRecording();
+            }
+          } else if (playbackState === 'idle') {
             asrGateRef.current = true;
+            audioRef.current?.setVadEnabled(true);
+            if (autoConnect && !audioRef.current?.isRecording()) {
+              void startListening();
+            }
           }
         },
         onAudioData: (base64Data: string) => {
-          if (asrGateRef.current && wsRef.current?.isConnected()) {
+          if (asrGateRef.current && !isPlayingRef.current && wsRef.current?.isConnected()) {
             wsRef.current.sendAudio(base64Data, sequenceRef.current++);
             sentFramesRef.current += 1;
             if (sentFramesRef.current === 1 || sentFramesRef.current % 50 === 0) {
@@ -107,6 +115,9 @@ export function useConversation(options: UseConversationOptions) {
         },
         onSpeechStart: () => {
           console.log('[Hook] User started speaking');
+          if (!asrGateRef.current || isPlayingRef.current || aiSpeakingRef.current) {
+            return;
+          }
           asrGateRef.current = true;
           // If AI is speaking, send interrupt
           if (aiSpeakingRef.current && wsRef.current?.isConnected()) {
@@ -119,6 +130,9 @@ export function useConversation(options: UseConversationOptions) {
         },
         onSilenceDetected: async () => {
           console.log('[Hook] User stopped speaking (silence detected)');
+          if (!asrGateRef.current || isPlayingRef.current || aiSpeakingRef.current) {
+            return;
+          }
           asrGateRef.current = false;
           await audioRef.current?.stopRecording();
           wsRef.current?.sendEndSpeaking();
@@ -174,9 +188,16 @@ export function useConversation(options: UseConversationOptions) {
           });
           if (serverState === 'speaking') {
             aiSpeakingRef.current = true;
+            asrGateRef.current = false;
+            audioRef.current?.setVadEnabled(false);
+            if (audioRef.current?.isRecording()) {
+              void audioRef.current.stopRecording();
+            }
           }
           if (serverState === 'idle') {
             aiSpeakingRef.current = false;
+            asrGateRef.current = true;
+            audioRef.current?.setVadEnabled(true);
             if (autoConnect && !audioRef.current?.isRecording()) {
               startListening();
             }
@@ -226,6 +247,7 @@ export function useConversation(options: UseConversationOptions) {
           console.log('[Hook] AI finished speaking');
           aiSpeakingRef.current = false;
           asrGateRef.current = true;
+          audioRef.current?.setVadEnabled(true);
           // Auto-start listening again after AI finishes
           setState(prev => ({ ...prev, status: 'listening' }));
           startListening();

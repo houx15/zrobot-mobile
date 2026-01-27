@@ -1,6 +1,7 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import * as FileSystem from 'expo-file-system';
+import CryptoJS from 'crypto-js';
 import { API_BASE_URL } from '../config';
 
 const api = axios.create({
@@ -149,7 +150,23 @@ export const uploadService = {
     });
 
     if (tokenRes.data.code !== 0) throw new Error(tokenRes.data.message);
-    const { upload_url, file_key, file_url, access_key_id, access_key_secret, security_token } = tokenRes.data.data;
+    const {
+      upload_url,
+      file_key,
+      file_url,
+      bucket,
+      access_key_id,
+      access_key_secret,
+      security_token
+    } = tokenRes.data.data || {};
+
+    if (!upload_url || !file_key || !file_url) {
+      throw new Error('上传凭证缺失：upload_url/file_key/file_url');
+    }
+    if (!access_key_id || !access_key_secret) {
+      console.error('[uploadService] STS missing', tokenRes.data.data);
+      throw new Error('上传凭证缺失：access_key_id/access_key_secret');
+    }
 
     // 2. Upload to OSS (Directly using PUT)
     // Note: In a real production env with Aliyun OSS, you might need to sign the request or use the STS token in headers.
@@ -167,14 +184,45 @@ export const uploadService = {
     // Let's implement a basic PUT with the headers we have.
     
     const uploadDest = `${upload_url}/${file_key}`;
+
+    const getContentType = (extName: string) => {
+      const extLower = extName.toLowerCase();
+      if (fileType === 'audio') {
+        if (extLower === 'wav') return 'audio/wav';
+        if (extLower === 'mp3') return 'audio/mpeg';
+        if (extLower === 'm4a') return 'audio/mp4';
+        return 'audio/wav';
+      }
+      if (fileType === 'video') {
+        if (extLower === 'mp4') return 'video/mp4';
+        return 'video/mp4';
+      }
+      if (extLower === 'png') return 'image/png';
+      if (extLower === 'webp') return 'image/webp';
+      return 'image/jpeg';
+    };
+
+    const contentType = getContentType(ext);
+    const date = new Date().toUTCString();
+    const canonicalizedHeaders = security_token ? `x-oss-security-token:${security_token}\n` : '';
+    const resourceBucket = bucket || upload_url.replace(/^https?:\/\//, '').split('.')[0];
+    const canonicalizedResource = `/${resourceBucket}/${file_key}`;
+    const stringToSign = `PUT\n\n${contentType}\n${date}\n${canonicalizedHeaders}${canonicalizedResource}`;
+    const signature = CryptoJS.enc.Base64.stringify(
+      CryptoJS.HmacSHA1(stringToSign, access_key_secret)
+    );
+    const authorization = `OSS ${access_key_id}:${signature}`;
     
     // We use FileSystem.uploadAsync for better binary handling in Expo
     const uploadResult = await FileSystem.uploadAsync(uploadDest, uri, {
-        httpMethod: 'PUT',
-        headers: {
-            'x-oss-security-token': security_token, // Common for Aliyun STS
-             // Add date/content-type if required by OSS config
-        }
+      httpMethod: 'PUT',
+      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      headers: {
+        'Content-Type': contentType,
+        'Date': date,
+        ...(security_token ? { 'x-oss-security-token': security_token } : {}),
+        'Authorization': authorization,
+      }
     });
 
     if (uploadResult.status >= 200 && uploadResult.status < 300) {
@@ -186,8 +234,6 @@ export const uploadService = {
 
 export const homeworkService = {
   submitCorrection: async (imageUrl: string) => {
-    // TODO
-    imageUrl = "http://wh111-store.oss-cn-shenzhen.aliyuncs.com/d/file/2022-10-21/e93cdc68a020a2e81fa5fc49cfaf7a3f/1.jpg?OSSAccessKeyId=LTAI4FhsUTKEPijGh5eWZdMd&Expires=5339337115&Signature=SmO%2Bb5iXTbrqhXbtpGCIA1DFCws%3D"
     const response = await api.post('/correction/submit', { image_url: imageUrl });
     return response.data;
   },
@@ -203,8 +249,6 @@ export const homeworkService = {
 
 export const questionService = {
   submitSolving: async (imageUrl: string) => {
-    // TODO
-    imageUrl = "http://www.haotiw.com/media/Question/2020/11/700002.png"
     const response = await api.post('/solving/submit', { image_url: imageUrl });
     return response.data;
   },
