@@ -91,8 +91,11 @@ class PCMRecorderModule(private val reactContext: ReactApplicationContext) :
 
             val sessionId = audioRecord?.audioSessionId ?: 0
             if (enableAec && AcousticEchoCanceler.isAvailable() && sessionId != 0) {
+                Log.w("PCMRecorderAEC", "AEC Enabled, sessionId=$sessionId")
                 aec = AcousticEchoCanceler.create(sessionId)
                 aec?.enabled = true
+            } else {
+                Log.w("PCMRecorderAEC", "AEC Disabled, sessionId=$sessionId, enableAec=$enableAec")
             }
             if (enableNs && NoiseSuppressor.isAvailable() && sessionId != 0) {
                 ns = NoiseSuppressor.create(sessionId)

@@ -31,7 +31,7 @@ const RECORDING_OPTIONS = {
 
 const PCM_DEBUG = true;
 const AUDIO_DEBUG = true;
-const PCM_ENABLE_AEC = false;
+const PCM_ENABLE_AEC = true;
 const PCM_ENABLE_NS = false;
 const PCM_GAIN = 1.0;
 const PCM_BUILD_TAG = 'rec-src=MIC aec=off ns=off gain=1.0';
@@ -421,7 +421,8 @@ export class AudioService {
     }
   ) {
     const format = (meta?.format || 'pcm').toLowerCase();
-    if (format !== 'pcm' || Platform.OS !== 'android' || !this.pcmPlayer) {
+    const isPcm = format === 'pcm' || format === 'pcm_s16le' || format === 's16le';
+    if (!isPcm || Platform.OS !== 'android' || !this.pcmPlayer) {
       // PCM streaming requires native AudioTrack; ignore non-PCM here.
       return;
     }

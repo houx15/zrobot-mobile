@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
 import { CameraProvider } from './src/contexts/CameraContext';
+import { navigationRef } from './src/services/navigation';
 import LoginScreen from './src/screens/LoginScreen';
 import BindScreen from './src/screens/BindScreen';
 import HomeScreen from './src/screens/HomeScreen';
@@ -25,7 +26,7 @@ export default function App() {
   return (
     <CameraProvider>
       <SafeAreaProvider>
-        <NavigationContainer>
+        <NavigationContainer ref={navigationRef}>
           <StatusBar style="dark" />
           <Stack.Navigator
               initialRouteName="Login"

@@ -3,6 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as FileSystem from 'expo-file-system';
 import CryptoJS from 'crypto-js';
 import { API_BASE_URL } from '../config';
+import { resetToLogin } from './navigation';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -19,6 +20,22 @@ api.interceptors.request.use(async (config) => {
   }
   return config;
 });
+
+// Response interceptor to handle 401 errors
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (error.response?.status === 401) {
+      // Clear auth data
+      await SecureStore.deleteItemAsync('auth_token');
+      await SecureStore.deleteItemAsync('token_expires_at');
+      await SecureStore.deleteItemAsync('user_info');
+      // Navigate to login
+      resetToLogin();
+    }
+    return Promise.reject(error);
+  }
+);
 
 export interface User {
   user_id: number;

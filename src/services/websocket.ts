@@ -5,11 +5,29 @@
 
 import { WS_BASE_URL } from '../config';
 
-// Message types from client to server
-export type ClientMessageType = 'audio' | 'end_speaking' | 'image' | 'interrupt' | 'ping';
+// Message types from client to server (v2 envelope)
+export type ClientMessageType =
+  | 'client_hello'
+  | 'mic_start'
+  | 'user_audio_chunk'
+  | 'mic_end'
+  | 'image'
+  | 'interrupt'
+  | 'ping';
 
-// Message types from server to client
-export type ServerMessageType = 'audio' | 'transcript' | 'segment' | 'state' | 'done' | 'error' | 'pong';
+// Message types from server to client (v2 envelope)
+export type ServerMessageType =
+  | 'state'
+  | 'asr_partial'
+  | 'asr_final'
+  | 'segment_start'
+  | 'ai_text_delta'
+  | 'audio_chunk'
+  | 'audio_end'
+  | 'board'
+  | 'done'
+  | 'error'
+  | 'pong';
 
 // Conversation state from server
 export type ConversationStateType = 'idle' | 'listening' | 'processing' | 'speaking';
@@ -21,36 +39,20 @@ export interface Segment {
   board: string;
 }
 
-export interface ClientMessage {
+export interface ClientEnvelope {
   type: ClientMessageType;
-  data: {
-    audio?: string;      // base64 encoded PCM audio
-    sequence?: number;
-    image_url?: string;  // image URL
-  };
-  timestamp: string;
+  conv_id: number;
+  msg_id: string;
+  ts_ms: number;
+  payload: Record<string, any>;
 }
 
-export interface ServerMessage {
+export interface ServerEnvelope {
   type: ServerMessageType;
-  data: {
-    audio?: string;      // base64 encoded audio from TTS
-    text?: string;       // transcript text
-    is_final?: boolean;  // true for final ASR result
-    format?: string;
-    sample_rate?: number;
-    channels?: number;
-    bits_per_sample?: number;
-    total_segments?: number;
-    code?: number;       // error code
-    message?: string;    // error message
-    state?: ConversationStateType;  // conversation state
-    // Segment fields
-    segment_id?: number;
-    speech?: string;
-    board?: string;
-  };
-  timestamp: string;
+  conv_id: number;
+  msg_id: string;
+  ts_ms: number;
+  payload: Record<string, any>;
 }
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -61,17 +63,32 @@ export interface AudioMeta {
   sampleRate?: number;
   channels?: number;
   bitsPerSample?: number;
-  isFinal?: boolean;
+  seq?: number;  // audio chunk sequence number
+}
+
+export interface AiTextDelta {
+  segmentId: number;
+  delta: string;
+  seq: number;
+}
+
+export interface AudioEndMeta {
+  segmentId: number;
+  lastSeq: number;
 }
 
 export interface WebSocketCallbacks {
   onConnectionChange?: (state: ConnectionState) => void;
-  onTranscript?: (text: string, isFinal: boolean) => void;
+  onAsrPartial?: (text: string) => void;
+  onAsrFinal?: (text: string) => void;
+  onAiTextDelta?: (delta: AiTextDelta) => void;
   onAudio?: (audioBase64: string, meta?: AudioMeta) => void;
-  onSegment?: (segment: Segment) => void;
+  onAudioEnd?: (meta: AudioEndMeta) => void;
+  onSegmentStart?: (segmentId: number, index: number) => void;
+  onBoard?: (segmentId: number, board: string) => void;
   onStateChange?: (state: ConversationStateType) => void;
-  onDone?: (totalSegments: number) => void;
-  onError?: (code: number, message: string) => void;
+  onDone?: (totalSegments: number, reason: string) => void;
+  onError?: (code: number, message: string, retryable?: boolean) => void;
   onClose?: (code: number, reason: string) => void;  // Called when connection closes
 }
 
@@ -84,6 +101,7 @@ export class ConversationWebSocket {
   private pingInterval: NodeJS.Timeout | null = null;
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 3;
+  private seq: number = 1;
 
   constructor(conversationId: number, token: string, callbacks: WebSocketCallbacks) {
     this.conversationId = conversationId;
@@ -160,34 +178,36 @@ export class ConversationWebSocket {
   /**
    * Send audio data to the server
    */
-  sendAudio(audioBase64: string, sequence: number) {
-    this.send({
-      type: 'audio',
-      data: { audio: audioBase64, sequence },
-      timestamp: new Date().toISOString()
+  sendClientHello(payload: Record<string, any>) {
+    this.sendEnvelope('client_hello', payload);
+  }
+
+  sendMicStart(streamId: string) {
+    this.sendEnvelope('mic_start', { stream_id: streamId });
+  }
+
+  sendAudioChunk(audioBase64: string, streamId: string, sequence?: number) {
+    const seq = sequence ?? this.seq++;
+    this.sendEnvelope('user_audio_chunk', {
+      stream_id: streamId,
+      seq,
+      format: 'pcm_s16le',
+      sample_rate: 16000,
+      channels: 1,
+      bits_per_sample: 16,
+      data_b64: audioBase64,
     });
   }
 
-  /**
-   * Send end speaking signal
-   */
-  sendEndSpeaking() {
-    this.send({
-      type: 'end_speaking',
-      data: {},
-      timestamp: new Date().toISOString()
-    });
+  sendMicEnd(streamId: string, lastSeq: number) {
+    this.sendEnvelope('mic_end', { stream_id: streamId, last_seq: lastSeq });
   }
 
   /**
    * Send image URL to the server
    */
   sendImage(imageUrl: string) {
-    this.send({
-      type: 'image',
-      data: { image_url: imageUrl },
-      timestamp: new Date().toISOString()
-    });
+    this.sendEnvelope('image', { image_url: imageUrl });
   }
 
   /**
@@ -195,28 +215,27 @@ export class ConversationWebSocket {
    */
   sendInterrupt() {
     console.log('[WS] Sending interrupt');
-    this.send({
-      type: 'interrupt',
-      data: {},
-      timestamp: new Date().toISOString()
-    });
+    this.sendEnvelope('interrupt', {});
   }
 
   /**
    * Send ping to keep connection alive
    */
   private sendPing() {
-    this.send({
-      type: 'ping',
-      data: {},
-      timestamp: new Date().toISOString()
-    });
+    this.sendEnvelope('ping', {});
   }
 
   /**
    * Send message through WebSocket
    */
-  private send(message: ClientMessage) {
+  private sendEnvelope(type: ClientMessageType, payload: Record<string, any>) {
+    const message: ClientEnvelope = {
+      type,
+      conv_id: this.conversationId,
+      msg_id: this.makeMsgId(),
+      ts_ms: Date.now(),
+      payload,
+    };
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
     } else {
@@ -224,64 +243,104 @@ export class ConversationWebSocket {
     }
   }
 
+  private makeMsgId(): string {
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+
   /**
    * Handle incoming messages from server
    */
   private handleMessage(data: string) {
     try {
-      const message: ServerMessage = JSON.parse(data);
-      console.log('[WS] Received:', message.type);
+      const message: ServerEnvelope = JSON.parse(data);
+      const payload = message.payload || {};
+      // Only log non-audio messages to reduce noise
+      if (message.type !== 'audio_chunk' && message.type !== 'ai_text_delta') {
+        console.log('[WS] Received:', message.type);
+      }
 
       switch (message.type) {
         case 'state':
           // Conversation state changed
-          if (message.data.state) {
-            this.callbacks.onStateChange?.(message.data.state);
+          if (payload.state) {
+            this.callbacks.onStateChange?.(payload.state);
           }
           break;
 
-        case 'transcript':
-          // ASR recognition result
-          this.callbacks.onTranscript?.(
-            message.data.text || '',
-            message.data.is_final || false
-          );
+        case 'asr_partial':
+          this.callbacks.onAsrPartial?.(payload.text || '');
           break;
 
-        case 'segment':
-          // New segment with speech + board content
-          if (message.data.segment_id !== undefined) {
-            const segment: Segment = {
-              segment_id: message.data.segment_id,
-              speech: message.data.speech || '',
-              board: message.data.board || '',
-            };
-            this.callbacks.onSegment?.(segment);
+        case 'asr_final':
+          this.callbacks.onAsrFinal?.(payload.text || '');
+          break;
+
+        case 'segment_start':
+          // Segment begins (speech only, board comes later)
+          if (payload.segment_id !== undefined) {
+            this.callbacks.onSegmentStart?.(
+              payload.segment_id,
+              payload.index || 0
+            );
           }
           break;
 
-        case 'audio':
+        case 'ai_text_delta':
+          if (payload.segment_id !== undefined) {
+            this.callbacks.onAiTextDelta?.({
+              segmentId: payload.segment_id,
+              delta: payload.delta || '',
+              seq: payload.seq || 0,
+            });
+          }
+          break;
+
+        case 'board':
+          // Board content (sent after audio ends)
+          if (payload.segment_id !== undefined) {
+            this.callbacks.onBoard?.(
+              payload.segment_id,
+              payload.content || ''
+            );
+          }
+          break;
+
+        case 'audio_chunk':
           // TTS audio data
-          this.callbacks.onAudio?.(message.data.audio || '', {
-            segmentId: message.data.segment_id,
-            format: message.data.format,
-            sampleRate: message.data.sample_rate,
-            channels: message.data.channels,
-            bitsPerSample: message.data.bits_per_sample,
-            isFinal: message.data.is_final,
+          this.callbacks.onAudio?.(payload.data_b64 || '', {
+            segmentId: payload.segment_id,
+            format: payload.format,
+            sampleRate: payload.sample_rate,
+            channels: payload.channels,
+            bitsPerSample: payload.bits_per_sample,
+            seq: payload.seq,
           });
+          break;
+
+        case 'audio_end':
+          // Audio stream ended for segment
+          if (payload.segment_id !== undefined) {
+            this.callbacks.onAudioEnd?.({
+              segmentId: payload.segment_id,
+              lastSeq: payload.last_seq || 0,
+            });
+          }
           break;
 
         case 'done':
           // AI finished replying
-          this.callbacks.onDone?.(message.data.total_segments || 0);
+          this.callbacks.onDone?.(
+            payload.total_segments || 0,
+            payload.reason || 'completed'
+          );
           break;
 
         case 'error':
           // Error from server
           this.callbacks.onError?.(
-            message.data.code || 5001,
-            message.data.message || 'Unknown error'
+            payload.code || 5001,
+            payload.message || 'Unknown error',
+            payload.retryable
           );
           break;
 
